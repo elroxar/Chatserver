@@ -6,7 +6,7 @@ import java.net.Socket;
 import java.util.HashSet;
 import java.util.Hashtable;
 
-public class Server {
+public class Server extends  {
 
     private ServerSocket serverSocket;
     private HashSet<Socket> clientSockets;
