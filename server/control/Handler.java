@@ -1,4 +1,4 @@
-package server;
+package server.control;
 
 import libary.datastructure.linear.list.List;
 
@@ -16,11 +16,21 @@ public class Handler {
         return user;
     }
 
+    public User getUser(String name) {
+        users.toFirst();
+        while (users.hasAccess()) {
+            User user = users.getContent();
+            if (user.getName().equals(name))
+                return user;
+        }
+        return null;
+    }
+
     public User getUser(String ip, int port) {
         users.toFirst();
-        while(users.hasAccess()) {
+        while (users.hasAccess()) {
             User user = users.getContent();
-            if(user.getIp().equals(ip) && user.getPort() == port)
+            if (user.getIp().equals(ip) && user.getPort() == port)
                 return user;
             users.next();
         }
@@ -29,9 +39,9 @@ public class Handler {
 
     public User removeUser(String ip, int port) {
         users.toFirst();
-        while(users.hasAccess()) {
+        while (users.hasAccess()) {
             User user = users.getContent();
-            if(user.getIp().equals(ip) && user.getPort() == port) {
+            if (user.getIp().equals(ip) && user.getPort() == port) {
                 users.remove();
                 return user;
             }

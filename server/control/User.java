@@ -1,4 +1,4 @@
-package server;
+package server.control;
 
 import java.security.Key;
 
@@ -7,13 +7,13 @@ public class User {
     private final String ip;
     private final int port;
 
-    private int id;
+    private String name;
     private Key encryptionKey;
 
     public User(String ip, int port) {
         this.ip = ip;
         this.port = port;
-        id = -1;
+        this.name = "";
     }
 
     public Key getEncryptionKey() {
@@ -24,12 +24,12 @@ public class User {
         this.encryptionKey = encryptionKey;
     }
 
-    public int getId() {
-        return id;
+    public String getName() {
+        return name;
     }
 
-    public void setId(int id) {
-        this.id = id;
+    public void setName(String name) {
+        this.name = name;
     }
 
     public String getIp() {
@@ -41,6 +41,6 @@ public class User {
     }
 
     public boolean isSignedIn() {
-        return id != -1;
+        return name != null;
     }
 }
