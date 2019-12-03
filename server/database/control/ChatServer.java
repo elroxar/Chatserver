@@ -20,6 +20,12 @@ public class ChatServer extends Server {
         stringBuilder = new StringBuilder();
     }
 
+    public static void main(String[] args) {
+        //ChatServer cS = new ChatServer();
+        ChatServer cS = null;
+
+    }
+
     @Override
     public void processNewConnection(String ip, int port) {
         User user = handler.addUser(ip, port);
@@ -37,11 +43,12 @@ public class ChatServer extends Server {
             String[] pw = dbConnector.getPassword(inst[1]);
             if (pw == null) {
                 String salt = generateSalt();
-                if (dbConnector.addUser(inst[1], salt, getSHA(salt, inst[2])))
-                user.setName(inst[1]);
+                if (dbConnector.addUser(inst[1], salt, getSHA(salt, inst[2])) == -1)
+                    user.setName(inst[1]);
                 send(user, "+;created new user");
             } else if (getSHA(pw[1], inst[2]).equals(pw[2])) {
                 user.setName(inst[1]);
+                // DBCOnnector sign in
                 send(user, "+;signed in");
             } else
                 send(user, "-;wrong username or password");
@@ -75,8 +82,8 @@ public class ChatServer extends Server {
     }
 
     private void getMessages(String[] inst, User user) {
-        if (inst.length == 4 && user.isSignedIn()) {
-            String[] messages = dbConnector.getMessages(user.getName(), Integer.parseInt(inst[1]), Integer.parseInt(inst[2]));
+        if (inst.length == 3 && user.isSignedIn()) {
+            String[] messages = dbConnector.getMessages(user.getName(), inst[1]);
             if (messages == null)
                 send(user, "-;chat not available");
             else
@@ -86,8 +93,8 @@ public class ChatServer extends Server {
     }
 
     private void getGroupMessages(String[] inst, User user) {
-        if (inst.length == 4 && user.isSignedIn()) {
-            String[] messages = dbConnector.getGroupMessages(inst[1], Integer.parseInt(inst[2]), Integer.parseInt(inst[3]));
+        if (inst.length == 3 && user.isSignedIn()) {
+            String[] messages = dbConnector.getGroupMessages(user.getName(), inst[1]);
             if (messages == null)
                 send(user, "-;chat not available");
             else
@@ -142,7 +149,7 @@ public class ChatServer extends Server {
                 send(user, "+");
                 User receiver = handler.getUser(inst[1]);
                 if (receiver != null)
-                    send(receiver, "SEND_MESSAGE;" + dbConnector.getMessages(inst[1], 0, 0)[0]);
+                    send(receiver, "SEND_MESSAGE;" + dbConnector.getMessages(user.getName(), inst[1])[0]);
             } else
                 send(user, "-");
     }
@@ -154,7 +161,7 @@ public class ChatServer extends Server {
                 for (String str : members) {
                     User receiver = handler.getUser(str);
                     if (receiver != null)
-                        send(receiver, "SEND_GROUP_MESSAGES;" + dbConnector.getGroupMessages(inst[1], 0, 0)[0]);
+                        send(receiver, "SEND_GROUP_MESSAGES;" + dbConnector.getGroupMessages(user.getName(), inst[1])[0]);
                 }
                 send(user, "+");
             } else
