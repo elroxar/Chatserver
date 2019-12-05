@@ -2,21 +2,27 @@ package util;
 
 import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
+/**
+ * a helper class to encrypt and decrypt messages
+ *
+ * @author Stefan Christian Kohlmeier
+ * @version 05.12.2019
+ */
 public class Cryptography {
 
-    private static MessageDigest mD;
+    private static MessageDigest messageDigest;
     private static Cipher cipher;
-    private static StringBuilder sB;
+    private static StringBuilder stringBuilder;
+    private static SecureRandom secureRandom;
 
     static {
         try {
-            mD = MessageDigest.getInstance("SHA-512");
+            messageDigest = MessageDigest.getInstance("SHA-512");
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         }
@@ -27,9 +33,15 @@ public class Cryptography {
         } catch (NoSuchPaddingException e) {
             e.printStackTrace();
         }
-        sB = new StringBuilder();
+        stringBuilder = new StringBuilder();
+        secureRandom = new SecureRandom();
     }
 
+    /**
+     * generates a key pair
+     *
+     * @return key pair
+     */
     public static KeyPair generateKeyPair() {
         try {
             KeyPairGenerator kPG = KeyPairGenerator.getInstance("DH");
@@ -41,28 +53,24 @@ public class Cryptography {
         return null;
     }
 
-    public static void main(String[] args)
-    {
-        KeyPair a = generateKeyPair();
-        KeyPair b = generateKeyPair();
-
-        Key s1 = keyAgreement(a.getPrivate(), keyToString(b.getPublic()));
-        Key s2 = keyAgreement(b.getPrivate(), keyToString(a.getPublic()));
-
-        System.out.println(keyToString(s1));
-        System.out.println(keyToString(s2));
-        System.out.println(s1);
-
-        String msg = "Hallo welt!";
-        System.out.println(generateMac(s1, msg));
-        System.out.println(generateMac(s2, msg));
-    }
-
+    /**
+     * converts a key to a string
+     *
+     * @param key key
+     * @return key converted to Base64 String
+     */
     public static String keyToString(Key key) {
         return Base64.getEncoder().encodeToString(key.getEncoded());
     }
 
-    public static Key keyAgreement(Key ownKey, String receivedKeyString) {
+    /**
+     * processes the Diffie-Hellman key agreement
+     *
+     * @param ownKey            own key
+     * @param receivedKeyString received key as a string
+     * @return the final key
+     */
+    public static SecretKey keyAgreement(Key ownKey, String receivedKeyString) {
         try {
             byte[] receivedBytes = Base64.getDecoder().decode(receivedKeyString);
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(receivedBytes);
@@ -78,8 +86,14 @@ public class Cryptography {
         return null;
     }
 
-    public static String encryptAES(Key key, String str)
-    {
+    /**
+     * encrypts a string using the aes encryption
+     *
+     * @param key encryption key
+     * @param str string
+     * @return encrypted String in Base64 format
+     */
+    public static String encryptAES(SecretKey key, String str) {
         try {
             cipher.init(Cipher.ENCRYPT_MODE, key);
             byte[] bytes = str.getBytes();
@@ -91,6 +105,13 @@ public class Cryptography {
         return null;
     }
 
+    /**
+     * decrypts a string using the aes encryption
+     *
+     * @param key decryption key
+     * @param str string in Base64 format
+     * @return decrypted String
+     */
     public static String decryptAES(Key key, String str) {
         try {
             cipher.init(Cipher.DECRYPT_MODE, key);
@@ -103,22 +124,39 @@ public class Cryptography {
         return null;
     }
 
-    public static String getSHA(String str)
-    {
-        byte[] bytes = str.getBytes(StandardCharsets.UTF_8);
-        bytes = mD.digest(bytes);
-        return bytesToHEX(bytes);
+    /**
+     * generates a salt for SHA hashing
+     *
+     * @return 16 Byte salt as a Base64 String
+     */
+    public static String generateSalt() {
+        byte[] bytes = new byte[16];
+        secureRandom.nextBytes(bytes);
+        return Base64.getEncoder().encodeToString(bytes);
     }
 
-    private static String bytesToHEX(byte[] bytes)
-    {
-        sB.setLength(0);
-        for(byte b : bytes)
-            sB.append(String.format("%02x", b));
-        return sB.toString();
+    /**
+     * generates the SHA-value of a String
+     *
+     * @param salt salt in Base64 format
+     * @param str  string
+     * @return SHA-value as a Base64 String
+     */
+    public static String getSHA(String salt, String str) {
+        byte[] bytes = str.getBytes();
+        messageDigest.update(Base64.getDecoder().decode(salt));
+        bytes = messageDigest.digest(bytes);
+        return Base64.getEncoder().encodeToString(bytes);
     }
 
-    public static String generateMac(Key key, String msg) {
+    /**
+     * generates a Message Authentication Certification code for a message
+     *
+     * @param key key
+     * @param msg message
+     * @return MAC as a Base64 String
+     */
+    public static String generateMac(SecretKey key, String msg) {
         try {
             Mac mac = Mac.getInstance("HMACSHA512");
             mac.init(key);

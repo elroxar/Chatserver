@@ -3,20 +3,35 @@ package server.control;
 import libary.network.server.Server;
 import server.database.DBConnector;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
 import java.security.KeyPair;
 
 import static util.Cryptography.*;
 
+/**
+ * a chat server
+ *
+ * @author Stefan Christian Kohlmeier
+ * @version 05.12.2019
+ */
 public class ChatServer extends Server {
 
     private Handler handler;
     private DBConnector dbConnector;
     private StringBuilder stringBuilder;
 
-    public ChatServer(int port, String dbIp, int dbPort, String dbName, String dbUsername, String dbPassword) {
+
+    /**
+     * constructor
+     *
+     * @param port       port
+     * @param dbUsername db username
+     * @param dbPassword db password
+     */
+    public ChatServer(int port, String dbUsername, String dbPassword) {
         super(port);
-        dbConnector = new DBConnector(dbIp, dbPort, dbName, dbUsername, dbPassword);
+        handler = new Handler();
+        dbConnector = new DBConnector(dbUsername, dbPassword);
         stringBuilder = new StringBuilder();
     }
 
@@ -30,10 +45,18 @@ public class ChatServer extends Server {
     public void processNewConnection(String ip, int port) {
         User user = handler.addUser(ip, port);
         KeyPair kP = generateKeyPair();
-        user.setEncryptionKey(kP.getPrivate());
+        user.setPrivateKey(kP.getPrivate());
         send(ip, port, "+INIT_KEY;" + keyToString(kP.getPublic()));
     }
 
+    /**
+     * signs in an user
+     *
+     * @param inst instructions from client <code>["SIGN_IN", username, password, MAC]</code>
+     * @param user user
+     * @param ip   ip
+     * @param port port
+     */
     private void signIn(String[] inst, User user, String ip, int port) {
         if (inst.length == 4) {
             if (handler.getUser(ip, port) != null) {
@@ -56,6 +79,14 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
+    /**
+     * signs out an user
+     *
+     * @param inst instructions from client <code>["SIGN_OUT", MAC]</code>
+     * @param user user
+     * @param ip   ip
+     * @param port port
+     */
     private void signOut(String[] inst, User user, String ip, int port) {
         if (inst.length == 2)
             if (handler.removeUser(ip, port) == null)
@@ -67,13 +98,25 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
+    /**
+     * gets chats of an user
+     *
+     * @param inst instructions from client <code>["GET_CHATS"]</code>
+     * @param user user
+     */
     private void getChats(String[] inst, User user) {
-        if (inst.length == 2 && user.isSignedIn()) {
+        if (inst.length == 2 && user.isSignedIn())
             send(user, "+;" + arrToStr(dbConnector.getChats(user.getName())));
-        } else
+        else
             send(user, "-");
     }
 
+    /**
+     * gets the groups of an user
+     *
+     * @param inst instructions from client <code>["GET_GROUPS"]</code>
+     * @param user user
+     */
     private void getGroups(String[] inst, User user) {
         if (inst.length == 2 && user.isSignedIn()) {
             send(user, "+;" + arrToStr(dbConnector.getGroupChats(user.getName())));
@@ -81,7 +124,13 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
-    private void getMessages(String[] inst, User user) {
+    /**
+     * gets the messages of an user
+     *
+     * @param inst instructions from client <code>["GET_CHAT_MESSAGES", name]</code>
+     * @param user user
+     */
+    private void getChatMessages(String[] inst, User user) {
         if (inst.length == 3 && user.isSignedIn()) {
             String[] messages = dbConnector.getMessages(user.getName(), inst[1]);
             if (messages == null)
@@ -92,6 +141,12 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
+    /**
+     * gets the group messages of a users group
+     *
+     * @param inst instructions from client <code>["GET_GROUP_MESSAGES", group]</code>
+     * @param user user
+     */
     private void getGroupMessages(String[] inst, User user) {
         if (inst.length == 3 && user.isSignedIn()) {
             String[] messages = dbConnector.getGroupMessages(user.getName(), inst[1]);
@@ -103,19 +158,31 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
+    /**
+     * creates a group for an user
+     *
+     * @param inst instructions from client <code>["CREATE_GROUP", group]</code>
+     * @param user user
+     */
     private void createGroup(String[] inst, User user) {
         if (inst.length == 3 && user.isSignedIn())
-            if (dbConnector.createGroup(user.getName(), inst[1]))
-                send(user, "+");
-            else
+            if (dbConnector.createGroup(user.getName(), inst[1]) == -1)
                 send(user, "-;group already exists");
+            else
+                send(user, "+");
         else
             send(user, "-");
     }
 
-    private void addToGroup(String[] inst, User user) {
+    /**
+     * lets a user join a group
+     *
+     * @param inst instructions from client <code>["JOIN_GROUP", group]</code>
+     * @param user user
+     */
+    private void joinGroup(String[] inst, User user) {
         if (inst.length == 4 && user.isSignedIn())
-            if (dbConnector.addGroupMember(user.getName(), inst[1], inst[2]))
+            if (dbConnector.joinGroup(user.getName(), inst[1]))
                 send(user, "+");
             else
                 send(user, "-;failure");
@@ -123,6 +190,12 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
+    /**
+     * lets a user leave a chat
+     *
+     * @param inst instructions from client <code>["LEAVE_CHAT", name]</code>
+     * @param user user
+     */
     private void leaveChat(String[] inst, User user) {
         if (inst.length == 3 && user.isSignedIn())
             if (dbConnector.leaveChat(user.getName(), inst[1]))
@@ -133,6 +206,12 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
+    /**
+     * lets an user leave a group
+     *
+     * @param inst instructions from client <code>["LEAVE_GROUP", group</code>
+     * @param user user
+     */
     private void leaveGroup(String[] inst, User user) {
         if (inst.length == 3 && user.isSignedIn())
             if (dbConnector.leaveGroup(user.getName(), inst[1]))
@@ -143,9 +222,15 @@ public class ChatServer extends Server {
             send(user, "-");
     }
 
-    private void sendMessage(String[] inst, User user) {
+    /**
+     * lets an user send a message to a chat partner
+     *
+     * @param inst instructions from client <code>["SEND_MESSAGE", name, message]</code>
+     * @param user user
+     */
+    private void sendChatMessage(String[] inst, User user) {
         if (inst.length == 4 && user.isSignedIn())
-            if (dbConnector.sendMessage(inst[1], inst[2])) {
+            if (dbConnector.sendChatMessage(inst[1], inst[2])) {
                 send(user, "+");
                 User receiver = handler.getUser(inst[1]);
                 if (receiver != null)
@@ -154,6 +239,12 @@ public class ChatServer extends Server {
                 send(user, "-");
     }
 
+    /**
+     * lets an user send a message to a group
+     *
+     * @param inst instructions from client <code>["SEND_GROUP_MESSAGE", group, message]</code>
+     * @param user user
+     */
     private void sendGroupMessage(String[] inst, User user) {
         if (inst.length == 4 && user.isSignedIn())
             if (dbConnector.sendGroupMessage(inst[1], inst[2])) {
@@ -177,7 +268,8 @@ public class ChatServer extends Server {
         if (!user.isSignedIn()) {
             String[] inst = message.split(";");
             if (inst[0].equals(("INIT_KEY"))) {
-                Key finalKey = keyAgreement(user.getEncryptionKey(), inst[1]);
+                SecretKey finalKey = keyAgreement(user.getPrivateKey(), inst[1]);
+                user.setPrivateKey(null);
                 user.setEncryptionKey(finalKey);
             } else {
                 send(ip, port, "-");
@@ -194,20 +286,20 @@ public class ChatServer extends Server {
                 getChats(inst, user);
             else if (inst[0].equals("GET_GROUPS"))
                 getGroups(inst, user);
-            else if (inst[0].equals("GET_MESSAGES"))
-                getMessages(inst, user);
+            else if (inst[0].equals("GET_CHAT_MESSAGES"))
+                getChatMessages(inst, user);
             else if (inst[0].equals("GET_GROUP_MESSAGES"))
                 getGroupMessages(inst, user);
             else if (inst[0].equals("CREATE_GROUP"))
                 createGroup(inst, user);
-            else if (inst[0].equals("ADD_TO_GROUP"))
-                addToGroup(inst, user);
+            else if (inst[0].equals("JOIN_GROUP"))
+                joinGroup(inst, user);
             else if (inst[0].equals("LEAVE_CHAT"))
                 leaveChat(inst, user);
             else if (inst[0].equals("LEAVE_GROUP"))
                 leaveGroup(inst, user);
-            else if (inst[0].equals("SEND_MESSAGE"))
-                sendMessage(inst, user);
+            else if (inst[0].equals("SEND_CHAT_MESSAGE"))
+                sendChatMessage(inst, user);
             else if (inst[0].equals("SEND_GROUP_MESSAGE"))
                 sendGroupMessage(inst, user);
             else
@@ -218,6 +310,12 @@ public class ChatServer extends Server {
         }
     }
 
+    /**
+     * converts a string array to a string
+     *
+     * @param strArr string array
+     * @return string with the following pattern: <code>strArr[0]+","+strArr[1]+","+...</code>
+     */
     private String arrToStr(String[] strArr) {
         stringBuilder.setLength(0);
         for (String str : strArr) {
@@ -226,6 +324,13 @@ public class ChatServer extends Server {
         return stringBuilder.toString();
     }
 
+    /**
+     * sends a message to a user using the aes encryption
+     *
+     * @param user    user
+     * @param message message
+     * @see #send(String, int, String)
+     */
     private void send(User user, String message) {
         send(user.getIp(), user.getPort(), encryptAES(user.getEncryptionKey(),
                 message + ";" + generateMac(user.getEncryptionKey(), message)));

@@ -1,20 +1,33 @@
-package client.gui;
+package client.gui.signin;
+
+import client.ChatClient;
+import client.gui.GUI;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 
+/**
+ * represents the login screen
+ *
+ * @author Stefan Christian Kohlmeier
+ * @version 05.12.2019
+ */
 public class SignIn extends JPanel implements ActionListener, FocusListener, MouseListener {
 
-    private final GUI gui;
-
-    private final JTextField ip;
-    private final JTextField port;
+    private final String ip = "localhost";
+    private final int port = 3306;
     private final JTextField name;
     private final JPasswordField password;
     private final JButton showPassword;
     private final JButton signIn;
+    private GUI gui;
 
+    /**
+     * constructor
+     *
+     * @param gui gui
+     */
     public SignIn(GUI gui) {
         super(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
@@ -26,8 +39,6 @@ public class SignIn extends JPanel implements ActionListener, FocusListener, Mou
         c.insets.left = 100;
         c.insets.right = 100;
         c.weightx = 1;
-        add(ip = new JTextField("ip"), c);
-        add(port = new JTextField("port"), c);
         add(name = new JTextField("name"), c);
         add(password = new JPasswordField("password"), c);
         password.setEchoChar((char) 0);
@@ -49,7 +60,14 @@ public class SignIn extends JPanel implements ActionListener, FocusListener, Mou
     @Override
     public void actionPerformed(ActionEvent e) {
         if (e.getSource() == signIn) {
-
+            ChatClient c = new ChatClient(ip, port, gui);
+            if (c.signIn(name.getText(), password.getPassword().toString()))
+                gui.signIn(c);
+            else {
+                name.setText("wrong username");
+                password.setText("or password");
+                password.setEchoChar((char) 0);
+            }
         }
     }
 

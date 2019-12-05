@@ -1,5 +1,6 @@
 package client;
 
+import client.gui.GUI;
 import libary.network.client.Client;
 
 import java.security.Key;
@@ -9,10 +10,13 @@ import static util.Cryptography.*;
 
 public class ChatClient extends Client {
 
+    private GUI gui;
+
     private Key encryptionKey;
 
-    public ChatClient(String ip, int port) {
+    public ChatClient(String ip, int port, GUI gui) {
         super(ip, port);
+        this.gui = gui;
     }
 
     @Override
