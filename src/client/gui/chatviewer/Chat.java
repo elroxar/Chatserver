@@ -1,5 +1,7 @@
 package client.gui.chatviewer;
 
+import client.ChatClient;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -15,6 +17,7 @@ import java.awt.event.MouseListener;
  */
 public class Chat implements ActionListener, MouseListener {
 
+    private ChatClient client;
     private ChatViewer chatViewer;
 
     private JPopupMenu popupMenu;
@@ -30,13 +33,15 @@ public class Chat implements ActionListener, MouseListener {
     /**
      * constructor
      *
+     * @param client     client
      * @param chatViewer chat viewer
      * @param chatName   chat name
      * @param isGroup    <code>true</code>, if the chat is a group, otherwise <code>false</code>
      */
-    public Chat(ChatViewer chatViewer, String chatName, boolean isGroup) {
+    public Chat(ChatClient client, ChatViewer chatViewer, String chatName, boolean isGroup) {
         this.chatViewer = chatViewer;
         this.isGroup = isGroup;
+        this.client = client;
         popupMenu = new JPopupMenu();
         popupMenu.add(leaveChat = new JMenuItem("leave chat"));
         leaveChat.addActionListener(this);
@@ -84,15 +89,8 @@ public class Chat implements ActionListener, MouseListener {
         return chat;
     }
 
-    /**
-     * adds a chat message
-     *
-     * @param sender    sender
-     * @param timestamp timestamp
-     * @param message   message
-     */
-    public void addMessage(String sender, String timestamp, String message) {
-        chat.append("<" + timestamp + "> " + sender + ":" + message + "\n\n");
+    public void addMessage(String timestamp, String sender, String message) {
+        chat.append("<" + timestamp + "> " + sender + ": " + message + "\n");
     }
 
     @Override
@@ -102,15 +100,19 @@ public class Chat implements ActionListener, MouseListener {
         } else if (e.getSource() == createChat) {
             String s = (String) JOptionPane.showInputDialog(chatViewer, null, "set chat partner",
                     JOptionPane.PLAIN_MESSAGE, null, null, null);
-            System.out.println(s);
+            chatViewer.addChat(new Chat(client, chatViewer, s, false));
         } else if (e.getSource() == createGroup) {
             String s = (String) JOptionPane.showInputDialog(chatViewer, null, "set group name",
                     JOptionPane.PLAIN_MESSAGE, null, null, null);
-            System.out.println(s);
+            client.createGroup(s);
         } else if (e.getSource() == joinGroup) {
             String s = (String) JOptionPane.showInputDialog(chatViewer, null, "join group",
                     JOptionPane.PLAIN_MESSAGE, null, null, null);
-            System.out.println(s);
+            client.joinGroup(s);
+        } else if (e.getSource() == leaveChat) {
+            chatViewer.removeChat(this);
+            if (isGroup) client.leaveGroup(chatSelection.getText());
+            else client.leaveChat(chatSelection.getText());
         }
     }
 

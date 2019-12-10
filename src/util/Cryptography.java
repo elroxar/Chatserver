@@ -112,10 +112,11 @@ public class Cryptography {
      * @param str string in Base64 format
      * @return decrypted String
      */
-    public static String decryptAES(Key key, String str) {
+    public static String decryptAES(SecretKey key, String str) {
         try {
             cipher.init(Cipher.DECRYPT_MODE, key);
-            byte[] bytes = Base64.getDecoder().decode(str);
+            byte[] bytes = Base64.getDecoder().
+                    decode(str);
             bytes = cipher.doFinal(bytes);
             return new String(bytes);
         } catch (InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
@@ -129,10 +130,10 @@ public class Cryptography {
      *
      * @return 16 Byte salt as a Base64 String
      */
-    public static String generateSalt() {
+    public static byte[] generateSalt() {
         byte[] bytes = new byte[16];
         secureRandom.nextBytes(bytes);
-        return Base64.getEncoder().encodeToString(bytes);
+        return bytes;
     }
 
     /**
@@ -142,11 +143,11 @@ public class Cryptography {
      * @param str  string
      * @return SHA-value as a Base64 String
      */
-    public static String getSHA(String salt, String str) {
+    public static byte[] getSHA(byte[] salt, String str) {
         byte[] bytes = str.getBytes();
-        messageDigest.update(Base64.getDecoder().decode(salt));
+        messageDigest.update(salt);
         bytes = messageDigest.digest(bytes);
-        return Base64.getEncoder().encodeToString(bytes);
+        return bytes;
     }
 
     /**
@@ -167,5 +168,13 @@ public class Cryptography {
             e.printStackTrace();
         }
         return null;
+    }
+
+    public static void main(String[] args) {
+        KeyPair kp1 = generateKeyPair();
+        KeyPair kp2 = generateKeyPair();
+        SecretKey key = keyAgreement(kp1.getPrivate(), keyToString(kp2.getPublic()));
+        String msg = "Hallo";
+        System.out.println(generateMac(key, msg).length());
     }
 }

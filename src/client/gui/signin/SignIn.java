@@ -1,7 +1,6 @@
 package client.gui.signin;
 
 import client.ChatClient;
-import client.gui.GUI;
 
 import javax.swing.*;
 import java.awt.*;
@@ -15,23 +14,17 @@ import java.awt.event.*;
  */
 public class SignIn extends JPanel implements ActionListener, FocusListener, MouseListener {
 
-    private final String ip = "localhost";
-    private final int port = 3306;
-    private final JTextField name;
-    private final JPasswordField password;
-    private final JButton showPassword;
-    private final JButton signIn;
-    private GUI gui;
+    private ChatClient client;
 
-    /**
-     * constructor
-     *
-     * @param gui gui
-     */
-    public SignIn(GUI gui) {
+    private JTextField name;
+    private JPasswordField password;
+    private JButton showPassword;
+    private JButton signIn;
+
+    public SignIn(ChatClient client) {
         super(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
-        this.gui = gui;
+        this.client = client;
         c.gridx = 0;
         c.gridwidth = 2;
         c.fill = GridBagConstraints.HORIZONTAL;
@@ -43,14 +36,14 @@ public class SignIn extends JPanel implements ActionListener, FocusListener, Mou
         add(password = new JPasswordField("password"), c);
         password.setEchoChar((char) 0);
         password.addFocusListener(this);
-        c.weightx = 0.9;
         c.gridwidth = 1;
+        c.weightx = 0.9;
         c.insets.right = 0;
         add(signIn = new JButton("sign in"), c);
         signIn.addActionListener(this);
         c.weightx = 0.1;
-        c.gridy = 4;
-        c.gridx = GridBagConstraints.RELATIVE;
+        c.gridy = 2;
+        c.gridx = 1;
         c.insets.right = 100;
         c.insets.left = 0;
         add(showPassword = new JButton("show password"), c);
@@ -60,14 +53,7 @@ public class SignIn extends JPanel implements ActionListener, FocusListener, Mou
     @Override
     public void actionPerformed(ActionEvent e) {
         if (e.getSource() == signIn) {
-            ChatClient c = new ChatClient(ip, port, gui);
-            if (c.signIn(name.getText(), password.getPassword().toString()))
-                gui.signIn(c);
-            else {
-                name.setText("wrong username");
-                password.setText("or password");
-                password.setEchoChar((char) 0);
-            }
+            client.signIn(name.getText(), new String(password.getPassword()));
         }
     }
 

@@ -1,5 +1,7 @@
 package client.gui.chatviewer;
 
+import client.ChatClient;
+
 import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -14,6 +16,9 @@ import java.awt.event.MouseListener;
  */
 public class ChatList extends JPanel implements ActionListener, MouseListener {
 
+    private ChatClient client;
+    private ChatViewer chatViewer;
+
     private JPopupMenu popupMenu;
     private JMenuItem createChat;
     private JMenuItem createGroup;
@@ -21,8 +26,13 @@ public class ChatList extends JPanel implements ActionListener, MouseListener {
 
     /**
      * constructor
+     *
+     * @param client     client
+     * @param chatViewer chat viewer
      */
-    public ChatList() {
+    public ChatList(ChatClient client, ChatViewer chatViewer) {
+        this.client = client;
+        this.chatViewer = chatViewer;
         popupMenu = new JPopupMenu();
         popupMenu.add(createChat = new JMenuItem("create chat"));
         createChat.addActionListener(this);
@@ -38,15 +48,15 @@ public class ChatList extends JPanel implements ActionListener, MouseListener {
         if (e.getSource() == createChat) {
             String s = (String) JOptionPane.showInputDialog(this, null, "set chat partner",
                     JOptionPane.PLAIN_MESSAGE, null, null, null);
-            System.out.println(s);
+            chatViewer.addChat(new Chat(client, chatViewer, s, false));
         } else if (e.getSource() == createGroup) {
             String s = (String) JOptionPane.showInputDialog(this, null, "set group name",
                     JOptionPane.PLAIN_MESSAGE, null, null, null);
-            System.out.println(s);
+            client.createGroup(s);
         } else if (e.getSource() == joinGroup) {
             String s = (String) JOptionPane.showInputDialog(this, null, "join group",
                     JOptionPane.PLAIN_MESSAGE, null, null, null);
-            System.out.println(s);
+            client.joinGroup(s);
         }
     }
 

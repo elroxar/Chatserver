@@ -1,12 +1,13 @@
 package client.gui.chatviewer;
 
 import client.ChatClient;
-import libary.datastructure.linear.list.List;
 
 import javax.swing.*;
 import java.awt.*;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
+import java.util.LinkedList;
+import java.util.List;
 
 /**
  * represents the chat viewer
@@ -16,7 +17,7 @@ import java.beans.PropertyChangeListener;
  */
 public class ChatViewer extends JSplitPane implements PropertyChangeListener {
 
-    private ChatClient chatClient;
+    private ChatClient client;
 
     private ChatList chatList;
     private List<Chat> chats;
@@ -27,12 +28,12 @@ public class ChatViewer extends JSplitPane implements PropertyChangeListener {
     /**
      * constructor
      *
-     * @param chatClient chat client
+     * @param client client
      */
-    public ChatViewer(ChatClient chatClient) {
+    public ChatViewer(ChatClient client) {
         super(JSplitPane.HORIZONTAL_SPLIT);
-        this.chatClient = chatClient;
-        chats = new List<>();
+        this.client = client;
+        chats = new LinkedList<>();
         setResizeWeight(0.2);
         addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, this);
         JPanel leftWrapper = new JPanel(new BorderLayout());
@@ -41,12 +42,26 @@ public class ChatViewer extends JSplitPane implements PropertyChangeListener {
         JPanel rightWrapper = new JPanel(new BorderLayout());
         rightWrapper.add(right = new JScrollPane(), BorderLayout.CENTER);
         rightWrapper.add(new SendBar(this), BorderLayout.SOUTH);
-        chatList = new ChatList();
+        chatList = new ChatList(client, this);
         chatList.setLayout(new BoxLayout(chatList, BoxLayout.Y_AXIS));
         left.setViewportView(chatList);
         add(leftWrapper, JSplitPane.LEFT);
         add(rightWrapper, JSplitPane.RIGHT);
-        addChat(new Chat(this, "Hallo ich bin dumm", true));
+    }
+
+    /**
+     * removes a chat from the chat viewer
+     *
+     * @param chat chat
+     */
+    public void removeChat(Chat chat) {
+        System.out.println("remove " + chat);
+        chats.remove(chat);
+        chatList.remove(chat.getChatSelection());
+        if (currentChat == chat)
+            currentChat = null;
+        revalidate();
+        repaint();
     }
 
     /**
@@ -56,10 +71,12 @@ public class ChatViewer extends JSplitPane implements PropertyChangeListener {
      */
     public void addChat(Chat chat) {
         chatList.add(chat.getChatSelection());
-        chats.append(chat);
+        chats.add(chat);
         JButton button = chat.getChatSelection();
         button.setMaximumSize(new Dimension(getDividerLocation(), button.getFont().getSize() + 2));
         button.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        revalidate();
+        repaint();
     }
 
     /**
@@ -80,53 +97,52 @@ public class ChatViewer extends JSplitPane implements PropertyChangeListener {
     public void send(String message) {
         if (currentChat == null) return;
         if (currentChat.isGroup())
-            chatClient.sendGroupMessage(message);
+            client.sendGroupMessage(getCurrentChatName(), message);
         else
-            chatClient.sendChatMessage(message);
+            client.sendChatMessage(getCurrentChatName(), message);
 
+    }
+
+    /**
+     * gets the current chat name
+     *
+     * @return current chat name
+     */
+    private String getCurrentChatName() {
+        return currentChat.getChatSelection().getText();
     }
 
     /**
      * signs out the client
      */
     public void signOut() {
-        chatClient.signOut();
+        client.signOut();
     }
 
     /**
-     * sends a group message
+     * gets a group
      *
-     * @param group     group
-     * @param sender    sender
-     * @param timestamp timestamp
-     * @param message   message
+     * @param group group name
+     * @return the group, if no group exists, which matches the name, return <code>null</code>
      */
-    public void sendGroupMessage(String group, String sender, String timestamp, String message) {
-        chats.toFirst();
-        while (chats.hasAccess()) {
-            Chat chat = chats.getContent();
-            if (chat.isGroup() && chat.getChatSelection().getText().equals(group))
-                chat.addMessage(sender, timestamp, message);
-            chats.next();
-        }
+    public Chat getGroup(String group) {
+        for (Chat c : chats)
+            if (c.isGroup() && c.getChatSelection().getText().equals(group))
+                return c;
+        return null;
     }
 
     /**
-     * sends a chat message
+     * gets a chat
      *
-     * @param receiver  receiver
-     * @param sender    sender
-     * @param timestamp timestamp
-     * @param message   message
+     * @param chat chat name
+     * @return the chat, if no chat exists, which matches the name, return <code>null</code>
      */
-    public void sendChatMessage(String receiver, String sender, String timestamp, String message) {
-        chats.toFirst();
-        while (chats.hasAccess()) {
-            Chat chat = chats.getContent();
-            if (!chat.isGroup() && chat.getChatSelection().getText().equals(receiver))
-                chat.addMessage(sender, timestamp, message);
-            chats.next();
-        }
+    public Chat getChat(String chat) {
+        for (Chat c : chats)
+            if (!c.isGroup() && c.getChatSelection().getText().equals(chat))
+                return c;
+        return null;
     }
 
     @Override

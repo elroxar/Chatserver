@@ -5,339 +5,345 @@ import server.database.DBConnector;
 
 import javax.crypto.SecretKey;
 import java.security.KeyPair;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 
 import static util.Cryptography.*;
 
 /**
- * a chat server
- *
  * @author Stefan Christian Kohlmeier
- * @version 05.12.2019
+ * @version 07.12.2019
  */
-public class ChatServer extends Server {
+public class ChatServer extends Server implements AutoCloseable {
 
-    private Handler handler;
-    private DBConnector dbConnector;
-    private StringBuilder stringBuilder;
+    private final static int port = 4000;
 
+    private DBConnector db;
+    private List<User> users;
+    private StringBuilder sb;
+
+    @Override
+    public void close() {
+        try {
+            db.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * constructor
-     *
-     * @param port       port
-     * @param dbUsername db username
-     * @param dbPassword db password
      */
-    public ChatServer(int port, String dbUsername, String dbPassword) {
+    public ChatServer() {
         super(port);
-        handler = new Handler();
-        dbConnector = new DBConnector(dbUsername, dbPassword);
-        stringBuilder = new StringBuilder();
+        db = new DBConnector();
+        users = new ArrayList<>();
+        sb = new StringBuilder();
     }
 
     public static void main(String[] args) {
-        //ChatServer cS = new ChatServer();
-        ChatServer cS = null;
+        new ChatServer();
+    }
 
+    /**
+     * gets the user
+     *
+     * @param ip   ip
+     * @param port port
+     * @return the user
+     */
+    private User getUser(String ip, int port) {
+        for (User u : users)
+            if (u.getIp().equals(ip) && u.getPort() == port)
+                return u;
+        return null;
+    }
+
+    /**
+     * gets the user
+     *
+     * @param name name
+     * @return the user
+     */
+    private User getUser(String name) {
+        for (User u : users) {
+            String uName = u.getName();
+            if (uName.equals(name)) return u;
+        }
+        return null;
+    }
+
+    @Override
+    public void processClosingConnection(String ip, int port) {
+        Iterator<User> it = users.iterator();
+        while (it.hasNext()) {
+            User u = it.next();
+            if (u.getIp().equals(ip) && u.getPort() == port) {
+                it.remove();
+                return;
+            }
+        }
     }
 
     @Override
     public void processNewConnection(String ip, int port) {
-        User user = handler.addUser(ip, port);
-        KeyPair kP = generateKeyPair();
-        user.setPrivateKey(kP.getPrivate());
-        send(ip, port, "+INIT_KEY;" + keyToString(kP.getPublic()));
+        User u = new User(ip, port);
+        users.add(u);
+        KeyPair kp = generateKeyPair();
+        u.setPrivateKey(kp.getPrivate());
+        send(ip, port, "INIT_KEY;" + keyToString(kp.getPublic()));
     }
 
     /**
-     * signs in an user
+     * signs an user in
      *
-     * @param inst instructions from client <code>["SIGN_IN", username, password, MAC]</code>
-     * @param user user
-     * @param ip   ip
-     * @param port port
+     * @param user     user
+     * @param username username
+     * @param password password
      */
-    private void signIn(String[] inst, User user, String ip, int port) {
-        if (inst.length == 4) {
-            if (handler.getUser(ip, port) != null) {
-                send(user, "-;already signed in");
-                return;
+    private void signIn(User user, String username, String password) {
+        byte[][] pw;
+        if ((pw = db.getPassword(username)) == null) {
+            byte[] salt = generateSalt();
+            byte[] genSHA = getSHA(salt, password);
+            if (db.registerUser(username, salt, genSHA)) {
+                user.setName(username);
+                send(user, "+;REGISTER");
+            } else
+                send(user, "-;REGISTER");
+        } else {
+            byte[] pwSHA = getSHA(pw[0], password);
+            if (Arrays.equals(pw[1], pwSHA)) {
+                user.setName(username);
+                send(user, "+;SIGN_IN");
+            } else
+                send(user, "-;SIGN_IN");
+        }
+    }
+
+    /**
+     * sends a chat message
+     *
+     * @param user    user
+     * @param partner partner
+     * @param message message
+     */
+    private void sendChatMessage(User user, String partner, String message) {
+        Timestamp ts = db.sendChatMessage(user.getName(), partner, message);
+        if (ts == null)
+            send(user, "-;SEND_CHAT_MESSAGE");
+        else {
+            User u = getUser(partner);
+            if (u != null)
+                send(u, "SEND_CHAT_MESSAGE;" + ts + ";" + user.getName() + ";" + message);
+        }
+    }
+
+    /**
+     * sends a group message
+     *
+     * @param user    user
+     * @param group   group
+     * @param message message
+     */
+    private void sendGroupMessage(User user, String group, String message) {
+        Timestamp ts = db.sendGroupMessage(user.getName(), group, message);
+        if (ts == null) {
+            send(user, "-;SEND_GROUP_MESSAGE");
+        } else {
+            String[] arr = db.getGroupMembers(group);
+            if (arr == null) return;
+            for (String s : arr) {
+                User u = getUser(s);
+                if (u != null)
+                    send(u, "SEND_GROUP_MESSAGE;" + group + ";" + ts + ";"
+                            + user.getName() + ";" + message);
             }
-            String[] pw = dbConnector.getPassword(inst[1]);
-            if (pw == null) {
-                String salt = generateSalt();
-                if (dbConnector.addUser(inst[1], salt, getSHA(salt, inst[2])) == -1)
-                    user.setName(inst[1]);
-                send(user, "+;created new user");
-            } else if (getSHA(pw[1], inst[2]).equals(pw[2])) {
-                user.setName(inst[1]);
-                // DBCOnnector sign in
-                send(user, "+;signed in");
-            } else
-                send(user, "-;wrong username or password");
-        } else
-            send(user, "-");
-    }
-
-    /**
-     * signs out an user
-     *
-     * @param inst instructions from client <code>["SIGN_OUT", MAC]</code>
-     * @param user user
-     * @param ip   ip
-     * @param port port
-     */
-    private void signOut(String[] inst, User user, String ip, int port) {
-        if (inst.length == 2)
-            if (handler.removeUser(ip, port) == null)
-                send(user, "-;not signed out");
-            else
-                send(user, "+");
-
-        else
-            send(user, "-");
-    }
-
-    /**
-     * gets chats of an user
-     *
-     * @param inst instructions from client <code>["GET_CHATS"]</code>
-     * @param user user
-     */
-    private void getChats(String[] inst, User user) {
-        if (inst.length == 2 && user.isSignedIn())
-            send(user, "+;" + arrToStr(dbConnector.getChats(user.getName())));
-        else
-            send(user, "-");
-    }
-
-    /**
-     * gets the groups of an user
-     *
-     * @param inst instructions from client <code>["GET_GROUPS"]</code>
-     * @param user user
-     */
-    private void getGroups(String[] inst, User user) {
-        if (inst.length == 2 && user.isSignedIn()) {
-            send(user, "+;" + arrToStr(dbConnector.getGroupChats(user.getName())));
-        } else
-            send(user, "-");
-    }
-
-    /**
-     * gets the messages of an user
-     *
-     * @param inst instructions from client <code>["GET_CHAT_MESSAGES", name]</code>
-     * @param user user
-     */
-    private void getChatMessages(String[] inst, User user) {
-        if (inst.length == 3 && user.isSignedIn()) {
-            String[] messages = dbConnector.getMessages(user.getName(), inst[1]);
-            if (messages == null)
-                send(user, "-;chat not available");
-            else
-                send(user, "SEND_MESSAGES;" + arrToStr(messages));
-        } else
-            send(user, "-");
-    }
-
-    /**
-     * gets the group messages of a users group
-     *
-     * @param inst instructions from client <code>["GET_GROUP_MESSAGES", group]</code>
-     * @param user user
-     */
-    private void getGroupMessages(String[] inst, User user) {
-        if (inst.length == 3 && user.isSignedIn()) {
-            String[] messages = dbConnector.getGroupMessages(user.getName(), inst[1]);
-            if (messages == null)
-                send(user, "-;chat not available");
-            else
-                send(user, "+;SEND_GROUP_MESSAGES;" + arrToStr(messages));
-        } else
-            send(user, "-");
-    }
-
-    /**
-     * creates a group for an user
-     *
-     * @param inst instructions from client <code>["CREATE_GROUP", group]</code>
-     * @param user user
-     */
-    private void createGroup(String[] inst, User user) {
-        if (inst.length == 3 && user.isSignedIn())
-            if (dbConnector.createGroup(user.getName(), inst[1]) == -1)
-                send(user, "-;group already exists");
-            else
-                send(user, "+");
-        else
-            send(user, "-");
-    }
-
-    /**
-     * lets a user join a group
-     *
-     * @param inst instructions from client <code>["JOIN_GROUP", group]</code>
-     * @param user user
-     */
-    private void joinGroup(String[] inst, User user) {
-        if (inst.length == 4 && user.isSignedIn())
-            if (dbConnector.joinGroup(user.getName(), inst[1]))
-                send(user, "+");
-            else
-                send(user, "-;failure");
-        else
-            send(user, "-");
-    }
-
-    /**
-     * lets a user leave a chat
-     *
-     * @param inst instructions from client <code>["LEAVE_CHAT", name]</code>
-     * @param user user
-     */
-    private void leaveChat(String[] inst, User user) {
-        if (inst.length == 3 && user.isSignedIn())
-            if (dbConnector.leaveChat(user.getName(), inst[1]))
-                send(user, "+");
-            else
-                send(user, "-;failure");
-        else
-            send(user, "-");
-    }
-
-    /**
-     * lets an user leave a group
-     *
-     * @param inst instructions from client <code>["LEAVE_GROUP", group</code>
-     * @param user user
-     */
-    private void leaveGroup(String[] inst, User user) {
-        if (inst.length == 3 && user.isSignedIn())
-            if (dbConnector.leaveGroup(user.getName(), inst[1]))
-                send(user, "+");
-            else
-                send(user, "-;failure");
-        else
-            send(user, "-");
-    }
-
-    /**
-     * lets an user send a message to a chat partner
-     *
-     * @param inst instructions from client <code>["SEND_MESSAGE", name, message]</code>
-     * @param user user
-     */
-    private void sendChatMessage(String[] inst, User user) {
-        if (inst.length == 4 && user.isSignedIn())
-            if (dbConnector.sendChatMessage(inst[1], inst[2])) {
-                send(user, "+");
-                User receiver = handler.getUser(inst[1]);
-                if (receiver != null)
-                    send(receiver, "SEND_MESSAGE;" + dbConnector.getMessages(user.getName(), inst[1])[0]);
-            } else
-                send(user, "-");
-    }
-
-    /**
-     * lets an user send a message to a group
-     *
-     * @param inst instructions from client <code>["SEND_GROUP_MESSAGE", group, message]</code>
-     * @param user user
-     */
-    private void sendGroupMessage(String[] inst, User user) {
-        if (inst.length == 4 && user.isSignedIn())
-            if (dbConnector.sendGroupMessage(inst[1], inst[2])) {
-                String[] members = dbConnector.getGroupMembers(inst[1]);
-                for (String str : members) {
-                    User receiver = handler.getUser(str);
-                    if (receiver != null)
-                        send(receiver, "SEND_GROUP_MESSAGES;" + dbConnector.getGroupMessages(user.getName(), inst[1])[0]);
-                }
-                send(user, "+");
-            } else
-                send(user, "-;failure");
-        else
-            send(user, "-");
+        }
     }
 
     @Override
     public void processMessage(String ip, int port, String message) {
-        User user = handler.getUser(ip, port);
-        // user is always registered in handler
-        if (!user.isSignedIn()) {
-            String[] inst = message.split(";");
-            if (inst[0].equals(("INIT_KEY"))) {
-                SecretKey finalKey = keyAgreement(user.getPrivateKey(), inst[1]);
-                user.setPrivateKey(null);
-                user.setEncryptionKey(finalKey);
-            } else {
-                send(ip, port, "-");
-            }
+        User u = getUser(ip, port);
+        if (message.indexOf("INIT_KEY;") == 0) {
+            String key = message.substring(9);
+            SecretKey ec = keyAgreement(u.getPrivateKey(), key);
+            u.setPrivateKey(null);
+            u.setEncryptionKey(ec);
+            return;
+        } else if (u.getEncryptionKey() == null) {
+            send(ip, port, "-");
             return;
         }
-        String[] inst = decryptAES(user.getEncryptionKey(), message).split(";");
-        if (generateMac(user.getEncryptionKey(), message.substring(0, message.lastIndexOf(";"))).equals(inst[inst.length - 1])) {
-            if (inst[0].equals("SIGN_IN"))
-                signIn(inst, user, ip, port);
-            else if (inst[0].equals("SIGN_OUT"))
-                signOut(inst, user, ip, port);
-            else if (inst[0].equals("GET_CHATS"))
-                getChats(inst, user);
-            else if (inst[0].equals("GET_GROUPS"))
-                getGroups(inst, user);
-            else if (inst[0].equals("GET_CHAT_MESSAGES"))
-                getChatMessages(inst, user);
-            else if (inst[0].equals("GET_GROUP_MESSAGES"))
-                getGroupMessages(inst, user);
-            else if (inst[0].equals("CREATE_GROUP"))
-                createGroup(inst, user);
-            else if (inst[0].equals("JOIN_GROUP"))
-                joinGroup(inst, user);
-            else if (inst[0].equals("LEAVE_CHAT"))
-                leaveChat(inst, user);
-            else if (inst[0].equals("LEAVE_GROUP"))
-                leaveGroup(inst, user);
-            else if (inst[0].equals("SEND_CHAT_MESSAGE"))
-                sendChatMessage(inst, user);
-            else if (inst[0].equals("SEND_GROUP_MESSAGE"))
-                sendGroupMessage(inst, user);
-            else
-                send(user, "-");
-        } else {
-            System.err.println("connection to " + ip + ":" + port + " insecure");
-            closeConnection(ip, port);
+        message = decryptAES(u.getEncryptionKey(), message);
+        System.out.println(message);
+        // matches ; not preceded and followed by ;
+        String[] splt = message.split(";");
+        message = message.substring(0, message.length() - splt[splt.length - 1].length() - 1);
+        if (!macCheck(u, message, splt[splt.length - 1])) {
+            System.err.println("Insecure connection!");
+            return;
         }
+        if (u.isSignedIn()) {
+            if (splt.length == 2) {
+                if (splt[0].equals("GET_CHATS"))
+                    getChats(u);
+                else if (splt[0].equals("GET_GROUPS"))
+                    getGroups(u);
+                else if (splt[0].equals("SIGN_OUT"))
+                    signOut(u);
+            } else if (splt.length == 3) {
+                if (splt[0].equals("CREATE_GROUP"))
+                    createGroup(u, splt[1]);
+                else if (splt[0].equals("GET_CHAT_MESSAGES"))
+                    getChatMessages(u, splt[1]);
+                else if (splt[0].equals("GET_GROUP_MESSAGES"))
+                    getGroupMessages(u, splt[1]);
+                else if (splt[0].equals("LEAVE_CHAT"))
+                    leaveChat(u, splt[1]);
+                else if (splt[0].equals("JOIN_GROUP"))
+                    joinGroup(u, splt[1]);
+                else if (splt[0].equals("LEAVE_GROUP"))
+                    leaveGroup(u, splt[1]);
+            } else if (splt.length == 4) {
+                if (splt[0].equals("SEND_CHAT_MESSAGE"))
+                    sendChatMessage(u, splt[1], splt[2]);
+                else if (splt[0].equals("SEND_GROUP_MESSAGE"))
+                    sendGroupMessage(u, splt[1], splt[2]);
+            }
+        } else if (splt.length == 4 && splt[0].equals("SIGN_IN"))
+            signIn(u, splt[1], splt[2]);
+        else
+            send(u, "-;WRONG_INPUT");
     }
 
     /**
-     * converts a string array to a string
+     * joins a group
      *
-     * @param strArr string array
-     * @return string with the following pattern: <code>strArr[0]+","+strArr[1]+","+...</code>
+     * @param user  user
+     * @param group group
      */
-    private String arrToStr(String[] strArr) {
-        stringBuilder.setLength(0);
-        for (String str : strArr) {
-            stringBuilder.append(str + ",");
-        }
-        return stringBuilder.toString();
+    private void joinGroup(User user, String group) {
+        if (db.joinGroup(user.getName(), group))
+            send(user, "+;JOIN_GROUP;" + group);
+        else
+            send(user, "-;JOIN_GROUP;" + group);
     }
 
     /**
-     * sends a message to a user using the aes encryption
+     * signs out
+     *
+     * @param user user
+     */
+    private void signOut(User user) {
+        if (user.isSignedIn()) {
+            send(user, "+;SIGN_OUT");
+            user.setName(null);
+        } else
+            send(user, "-;SIGN_OUT");
+    }
+
+    /**
+     * leaves a group
+     *
+     * @param user  user
+     * @param group group
+     */
+    private void leaveGroup(User user, String group) {
+        if (db.leaveGroup(user.getName(), group))
+            send(user, "+;LEAVE_GROUP;" + group);
+        else
+            send(user, "-;LEAVE_GROUP;" + group);
+    }
+
+    /**
+     * leaves a chat
      *
      * @param user    user
-     * @param message message
-     * @see #send(String, int, String)
+     * @param partner partner
      */
-    private void send(User user, String message) {
-        send(user.getIp(), user.getPort(), encryptAES(user.getEncryptionKey(),
-                message + ";" + generateMac(user.getEncryptionKey(), message)));
+    private void leaveChat(User user, String partner) {
+        if (db.leaveChat(user.getName(), partner))
+            send(user, "+;LEAVE_CHAT");
+        else
+            send(user, "-;LEAVE_CHAT");
     }
 
-    @Override
-    public void processClosingConnection(String pClientIP, int pClientPort) {
-        handler.removeUser(pClientIP, pClientPort);
+    private void createGroup(User user, String group) {
+        if (db.createGroup(user.getName(), group))
+            send(user, "+;CREATE_GROUP;" + group);
+        else
+            send(user, "-;CREATE_GROUP;" + group);
+    }
+
+    private void getGroupMessages(User user, String group) {
+        String[][] arr = db.getGroupMessages(group);
+        if (arr == null) {
+            send(user, "-;SEND_GROUP_MESSAGES;" + group);
+        } else {
+            sb.setLength(0);
+            sb.append("+;SEND_GROUP_MESSAGES;" + group);
+            sendChatGroupMessages(user, arr);
+        }
+    }
+
+    private void getChatMessages(User user, String chat) {
+        String[][] arr = db.getChatMessages(user.getName(), chat);
+        if (arr == null) {
+            sb.setLength(0);
+            sb.append("+;SEND_CHAT_MESSAGES;" + chat);
+            sendChatGroupMessages(user, arr);
+        } else {
+            send(user, "-;SEND_GROUP_MESSAGES;" + chat);
+        }
+    }
+
+    private void sendChatGroupMessages(User user, String[][] arr) {
+        for (String[] s : arr) {
+            sb.append(";" + s[0]);
+            sb.append(";" + s[1]);
+            sb.append(";" + s[2]);
+        }
+        send(user, sb.toString());
+    }
+
+    private boolean macCheck(User user, String message, String mac) {
+        return generateMac(user.getEncryptionKey(), message).equals(mac);
+    }
+
+    private String getChatsGroups(String[] arr) {
+        if (arr != null) {
+            for (String s : arr) {
+                sb.append(";" + s);
+            }
+        }
+        return sb.toString();
+    }
+
+    private void getGroups(User user) {
+        sb.setLength(0);
+        sb.append("+;SEND_GROUPS");
+        String[] arr = db.getGroups(user.getName());
+        String msg = getChatsGroups(arr);
+        send(user, msg);
+    }
+
+    private void getChats(User user) {
+        sb.setLength(0);
+        sb.append("+;SEND_CHATS");
+        String[] arr = db.getChats(user.getName());
+        String msg = getChatsGroups(arr);
+        send(user, msg);
+    }
+
+    public void send(User user, String message) {
+        SecretKey k = user.getEncryptionKey();
+        String mac = generateMac(k, message);
+        message = encryptAES(k, message + ";" + mac);
+        send(user.getIp(), user.getPort(), message);
     }
 }
